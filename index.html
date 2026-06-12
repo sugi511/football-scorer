@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>試合結果メーカー</title>
+<style>
+  :root {
+    --c-bg: #f4f6f8;
+    --c-card: #ffffff;
+    --c-text: #1a2433;
+    --c-sub: #66758a;
+    --c-accent: #1565d8;
+    --c-accent-dark: #0e4ca8;
+    --c-gray: #8a97a8;
+    --c-gray-dark: #6b7888;
+    --c-danger: #d83a3a;
+    --c-border: #d8dfe8;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: var(--c-bg); color: var(--c-text);
+    user-select: none; -webkit-user-select: none;
+  }
+  button { font-family: inherit; touch-action: manipulation; cursor: pointer; }
+  input, textarea { font-family: inherit; font-size: 16px; } /* 16px以上でiOSのズーム防止 */
+
+  .app { max-width: 480px; margin: 0 auto; padding: 0 12px 96px; }
+
+  /* ===== ナビ ===== */
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+    background: var(--c-card); border-top: 1px solid var(--c-border);
+    display: flex; max-width: 480px; margin: 0 auto;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; padding: 12px 0 10px; background: none; border: none;
+    font-size: 13px; color: var(--c-sub); border-top: 3px solid transparent;
+  }
+  nav button.active { color: var(--c-accent); border-top-color: var(--c-accent); font-weight: 700; }
+
+  h1 { font-size: 18px; margin: 16px 4px 12px; }
+  section.screen { display: none; }
+  section.screen.active { display: block; }
+
+  .card { background: var(--c-card); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .label { font-size: 12px; color: var(--c-sub); font-weight: 700; margin-bottom: 8px; }
+
+  #storage-warning {
+    background: #fff3cd; color: #7a5c00; padding: 10px 14px; font-size: 13px;
+    border-radius: var(--radius); margin: 12px 0; display: none;
+  }
+
+  /* ===== セグメント ===== */
+  .segment { display: flex; gap: 8px; }
+  .segment button {
+    flex: 1; padding: 14px 0; font-size: 15px; font-weight: 700;
+    border: 2px solid var(--c-border); border-radius: var(--radius);
+    background: var(--c-card); color: var(--c-sub);
+  }
+  .segment button.selected { border-color: var(--c-accent); background: #e8f0fd; color: var(--c-accent); }
+
+  /* ===== 相手チーム名 ===== */
+  .opponent-wrap { position: relative; }
+  #opponent-input {
+    width: 100%; padding: 14px; border: 2px solid var(--c-border); border-radius: var(--radius);
+    background: var(--c-card);
+  }
+  #opponent-input:focus { outline: none; border-color: var(--c-accent); }
+  #suggest {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 40;
+    background: var(--c-card); border: 1px solid var(--c-border); border-radius: var(--radius);
+    margin-top: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.12); overflow: hidden; display: none;
+  }
+  #suggest button {
+    display: block; width: 100%; text-align: left; padding: 14px; font-size: 16px;
+    background: none; border: none; border-bottom: 1px solid var(--c-border);
+  }
+  #suggest button:last-child { border-bottom: none; }
+  #suggest .today-mark { font-size: 11px; color: var(--c-accent); margin-left: 6px; }
+
+  /* ===== スコアボード ===== */
+  .scoreboard { display: flex; gap: 12px; }
+  .score-col { flex: 1; text-align: center; }
+  .score-col .team-label { font-size: 13px; font-weight: 700; color: var(--c-sub); height: 1.4em; overflow: hidden; }
+  .score-col .score { font-size: 64px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .btn-plus {
+    width: 100%; height: 72px; font-size: 28px; font-weight: 800; color: #fff;
+    border: none; border-radius: var(--radius); margin-top: 6px;
+  }
+  .btn-plus:active { transform: scale(.97); }
+  .my .btn-plus { background: var(--c-accent); }
+  .op .btn-plus { background: var(--c-gray); }
+  .btn-minus {
+    margin-top: 8px; padding: 8px 18px; font-size: 14px; color: var(--c-sub);
+    background: none; border: 1px solid var(--c-border); border-radius: 8px;
+  }
+  .btn-minus:disabled { opacity: .35; }
+  .score-divider { display: flex; align-items: center; font-size: 24px; color: var(--c-sub); padding-top: 38px; }
+
+  .scorer-log { margin-top: 12px; font-size: 13px; color: var(--c-sub); line-height: 1.7; }
+
+  /* ===== 大ボタン ===== */
+  .btn-primary {
+    display: block; width: 100%; padding: 18px; font-size: 17px; font-weight: 700;
+    color: #fff; background: var(--c-accent); border: none; border-radius: var(--radius);
+  }
+  .btn-primary:active { background: var(--c-accent-dark); }
+  .btn-secondary {
+    display: block; width: 100%; padding: 16px; font-size: 16px; font-weight: 700;
+    color: var(--c-accent); background: #e8f0fd; border: none; border-radius: var(--radius);
+  }
+  .btn-ghost {
+    display: block; width: 100%; padding: 14px; font-size: 15px;
+    color: var(--c-sub); background: none; border: 1px solid var(--c-border); border-radius: var(--radius);
+  }
+  .stack > * + * { margin-top: 10px; }
+
+  /* ===== プレビュー ===== */
+  #preview-text {
+    user-select: text; -webkit-user-select: text;
+    background: var(--c-card); border-radius: var(--radius); padding: 16px;
+    font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+    margin: 0 0 14px; border: 1px solid var(--c-border);
+  }
+  .warn { color: var(--c-danger); font-size: 13px; margin: 0 0 10px; }
+
+  /* ===== 今日の一覧 ===== */
+  .match-card { display: flex; align-items: center; gap: 10px; }
+  .match-card .summary { flex: 1; min-width: 0; }
+  .match-card .summary .line1 { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .match-card .summary .line2 { font-size: 12px; color: var(--c-sub); }
+  .btn-small {
+    padding: 10px 14px; font-size: 14px; font-weight: 700; border-radius: 8px; border: none;
+    background: #e8f0fd; color: var(--c-accent); white-space: nowrap;
+  }
+  .btn-small.danger { background: #fdecec; color: var(--c-danger); }
+  .empty { text-align: center; color: var(--c-sub); padding: 32px 0; font-size: 14px; }
+
+  /* ===== 選手設定 ===== */
+  #bulk-input {
+    width: 100%; height: 140px; padding: 12px; border: 2px solid var(--c-border);
+    border-radius: var(--radius); resize: vertical;
+  }
+  .player-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .player-row input {
+    padding: 12px 10px; border: 1px solid var(--c-border); border-radius: 8px; min-width: 0;
+  }
+  .player-row .num { width: 72px; text-align: center; }
+  .player-row .nm { flex: 1; }
+  .player-row .del {
+    padding: 10px 12px; background: #fdecec; color: var(--c-danger);
+    border: none; border-radius: 8px; font-size: 14px;
+  }
+  .hint { font-size: 12px; color: var(--c-sub); line-height: 1.6; margin-top: 8px; }
+
+  /* ===== 得点者シート ===== */
+  #sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: none;
+  }
+  #sheet-overlay.open { display: flex; flex-direction: column; justify-content: flex-end; }
+  #sheet {
+    background: var(--c-card); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height: 75vh; overflow-y: auto; max-width: 480px; width: 100%; margin: 0 auto;
+  }
+  #sheet h2 { font-size: 15px; margin: 0 0 12px; color: var(--c-sub); }
+  .sheet-player {
+    display: block; width: 100%; padding: 16px; font-size: 17px; font-weight: 700; text-align: left;
+    background: var(--c-bg); border: none; border-radius: var(--radius); margin-bottom: 8px;
+  }
+  .sheet-player:active { background: #e8f0fd; }
+  .sheet-skip {
+    display: block; width: 100%; padding: 14px; font-size: 15px;
+    background: none; border: 1px dashed var(--c-border); border-radius: var(--radius);
+    color: var(--c-sub); margin-bottom: 8px;
+  }
+  .sheet-cancel {
+    display: block; width: 100%; padding: 14px; font-size: 15px;
+    background: none; border: none; color: var(--c-danger); font-weight: 700;
+  }
+
+  /* ===== トースト ===== */
+  #toast {
+    position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+    background: rgba(26,36,51,.92); color: #fff; padding: 12px 20px; border-radius: 24px;
+    font-size: 14px; z-index: 200; opacity: 0; transition: opacity .25s; pointer-events: none;
+    max-width: 90%; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="storage-warning">⚠ この端末では保存機能が使えません。リロードするとデータが消えます。</div>
+
+  <!-- ============ 試合画面 ============ -->
+  <section id="screen-match" class="screen">
+    <h1>試合</h1>
+    <div class="card">
+      <div class="label">自チーム（混合のときは「なし」）</div>
+      <div class="segment" id="team-segment">
+        <button data-team="シリウス">シリウス</button>
+        <button data-team="レグルス">レグルス</button>
+        <button data-team="">なし</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">相手チーム名</div>
+      <div class="opponent-wrap">
+        <input id="opponent-input" type="text" placeholder="相手チーム名" autocomplete="off">
+        <div id="suggest"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="scoreboard">
+        <div class="score-col my">
+          <div class="team-label" id="my-label">自チーム</div>
+          <div class="score" id="my-score">0</div>
+          <button class="btn-plus" id="my-plus">＋1</button>
+          <button class="btn-minus" id="my-minus">－1 取り消し</button>
+        </div>
+        <div class="score-divider">-</div>
+        <div class="score-col op">
+          <div class="team-label" id="op-label">相手</div>
+          <div class="score" id="op-score">0</div>
+          <button class="btn-plus" id="op-plus">＋1</button>
+          <button class="btn-minus" id="op-minus">－1 取り消し</button>
+        </div>
+      </div>
+      <div class="scorer-log" id="scorer-log"></div>
+    </div>
+
+    <button class="btn-primary" id="btn-finish">試合終了 → プレビュー</button>
+  </section>
+
+  <!-- ============ プレビュー ============ -->
+  <section id="screen-preview" class="screen">
+    <h1>プレビュー</h1>
+    <p class="warn" id="preview-warn" style="display:none">⚠ 相手チーム名が未入力です</p>
+    <pre id="preview-text"></pre>
+    <div class="stack">
+      <button class="btn-primary" id="btn-copy">コピー</button>
+      <button class="btn-secondary" id="btn-confirm">確定して次の試合へ</button>
+      <button class="btn-ghost" id="btn-back">戻って修正</button>
+    </div>
+  </section>
+
+  <!-- ============ 今日の一覧 ============ -->
+  <section id="screen-today" class="screen">
+    <h1>今日の試合</h1>
+    <div id="today-actions" style="display:none; margin-bottom:14px">
+      <button class="btn-secondary" id="btn-copy-all">全試合まとめてコピー</button>
+    </div>
+    <div id="today-list"></div>
+  </section>
+
+  <!-- ============ 選手設定 ============ -->
+  <section id="screen-players" class="screen">
+    <h1>選手設定</h1>
+    <div class="card">
+      <div class="label">一括入力（1行に「背番号,名前」）</div>
+      <textarea id="bulk-input" placeholder="10,山田&#10;7,佐藤&#10;9,&#10;,鈴木"></textarea>
+      <div class="hint">番号だけの子は「9,」、名前だけの子は「,鈴木」と書けます。<br>この行の順番がそのまま表示順になります。</div>
+      <div style="margin-top:10px">
+        <button class="btn-primary" id="btn-bulk">一括登録（全置換）</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">個別編集</div>
+      <div id="player-list"></div>
+      <button class="btn-ghost" id="btn-add-player">＋ 選手を追加</button>
+    </div>
+  </section>
+</div>
+
+<!-- ============ 得点者シート ============ -->
+<div id="sheet-overlay">
+  <div id="sheet">
+    <h2>得点した選手をタップ</h2>
+    <div id="sheet-players"></div>
+    <button class="sheet-skip" id="sheet-skip">スキップ（得点者なし / 不明）</button>
+    <button class="sheet-cancel" id="sheet-cancel">キャンセル（加算しない）</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<nav>
+  <button data-screen="match">試合</button>
+  <button data-screen="today">今日の一覧</button>
+  <button data-screen="players">選手設定</button>
+</nav>
+
+<script>
+'use strict';
+
+/* ================= ストレージ層 ================= */
+const KEY = {
+  version: 'fs.version',
+  players: 'fs.players',
+  opponents: 'fs.opponents',
+  current: 'fs.currentMatch',
+  today: 'fs.todayMatches',
+};
+
+function checkStorage() {
+  try {
+    localStorage.setItem('fs.__test', '1');
+    localStorage.removeItem('fs.__test');
+    return true;
+  } catch (e) { return false; }
+}
+const storageOK = checkStorage();
+const mem = {};
+const store = {
+  load(key, fallback) {
+    if (!storageOK) return key in mem ? mem[key] : fallback;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return fallback;
+      const v = JSON.parse(raw);
+      return v === null || v === undefined ? fallback : v;
+    } catch (e) { return fallback; }
+  },
+  save(key, value) {
+    if (!storageOK) { mem[key] = value; return; }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  },
+  remove(key) {
+    if (!storageOK) { delete mem[key]; return; }
+    try { localStorage.removeItem(key); } catch (e) {}
+  },
+};
+
+/* ================= ユーティリティ ================= */
+function uid() {
+  return (crypto.randomUUID) ? crypto.randomUUID()
+    : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+function today() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function withinDays(dateStr, days) {
+  const t = new Date(dateStr + 'T00:00:00').getTime();
+  if (isNaN(t)) return false;
+  return (Date.now() - t) <= days * 86400000;
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ================= 状態 ================= */
+function newMatch(myTeam = '') {
+  return { id: uid(), myTeam, opponent: '', myScore: 0, opScore: 0, scorers: [], finishedAt: null };
+}
+
+const state = {
+  screen: 'match',
+  players: [],
+  opponents: [],
+  match: newMatch(),
+  todayMatches: { date: today(), matches: [] },
+};
+
+/* ================= 出力テキスト生成 ================= */
+function formatScorer(p) {
+  if (p.number && p.name) return `#${p.number} ${p.name}`;
+  if (p.number) return `#${p.number}`;
+  return `#${p.name}`;
+}
+function buildMessage(match, players) {
+  const lines = [];
+  if (match.myTeam) lines.push(match.myTeam);
+  lines.push(`v.s ${match.opponent || '（相手チーム名未入力）'}`);
+  lines.push(`${match.myScore}-${match.opScore}`);
+  for (const pid of match.scorers) {
+    if (pid === null) continue;
+    const p = players.find(x => x.id === pid);
+    if (p) lines.push(formatScorer(p));
+  }
+  return lines.join('\n');
+}
+
+/* ================= コピー ================= */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e2) { return false; }
+  }
+}
+
+/* ================= トースト ================= */
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+/* ================= 保存ヘルパ ================= */
+function saveMatch()   { store.save(KEY.current, state.match); }
+function savePlayers() { store.save(KEY.players, state.players); }
+function saveOpponents() { store.save(KEY.opponents, state.opponents); }
+function saveToday()   { store.save(KEY.today, state.todayMatches); }
+
+function ensureToday() {
+  if (state.todayMatches.date !== today()) {
+    state.todayMatches = { date: today(), matches: [] };
+    saveToday();
+  }
+}
+
+/* ================= 画面切替 ================= */
+function showScreen(name) {
+  state.screen = name;
+  document.querySelectorAll('section.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.screen === (name === 'preview' ? 'match' : name));
+  });
+  if (name === 'match')   renderMatch();
+  if (name === 'preview') renderPreview();
+  if (name === 'today')   { ensureToday(); renderToday(); }
+  if (name === 'players') renderPlayersScreen(true);
+  window.scrollTo(0, 0);
+}
+
+/* ================= 試合画面 ================= */
+function renderMatch() {
+  // セグメント
+  document.querySelectorAll('#team-segment button').forEach(b => {
+    b.classList.toggle('selected', b.dataset.team === state.match.myTeam);
+  });
+  // 相手名 input（フォーカス外のときだけ同期。IME保護）
+  const inp = document.getElementById('opponent-input');
+  if (document.activeElement !== inp && inp.value !== state.match.opponent) {
+    inp.value = state.match.opponent;
+  }
+  // スコア
+  document.getElementById('my-label').textContent = state.match.myTeam || '自チーム';
+  document.getElementById('op-label').textContent = state.match.opponent || '相手';
+  document.getElementById('my-score').textContent = state.match.myScore;
+  document.getElementById('op-score').textContent = state.match.opScore;
+  document.getElementById('my-minus').disabled = state.match.myScore === 0;
+  document.getElementById('op-minus').disabled = state.match.opScore === 0;
+  // 得点者ログ
+  const log = state.match.scorers.map((pid, i) => {
+    if (pid === null) return `${i + 1}点目: （得点者なし）`;
+    const p = state.players.find(x => x.id === pid);
+    return `${i + 1}点目: ${p ? esc(formatScorer(p)) : '（削除済みの選手）'}`;
+  });
+  document.getElementById('scorer-log').innerHTML = log.join('<br>');
+}
+
+/* --- 相手名サジェスト --- */
+function renderSuggest() {
+  const inp = document.getElementById('opponent-input');
+  const box = document.getElementById('suggest');
+  const q = inp.value.trim();
+  const td = today();
+  const cands = state.opponents
+    .filter(o => !q || o.name.includes(q))
+    .filter(o => o.name !== q)
+    .sort((a, b) => {
+      const at = a.lastUsed === td ? 1 : 0, bt = b.lastUsed === td ? 1 : 0;
+      if (at !== bt) return bt - at;
+      return b.lastUsed.localeCompare(a.lastUsed);
+    })
+    .slice(0, 8);
+  if (cands.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = cands.map(o =>
+    `<button type="button" data-name="${esc(o.name)}">${esc(o.name)}${o.lastUsed === td ? '<span class="today-mark">今日</span>' : ''}</button>`
+  ).join('');
+  box.style.display = 'block';
+}
+function hideSuggest() {
+  const box = document.getElementById('suggest');
+  box.style.display = 'none';
+  box.innerHTML = '';
+}
+
+/* --- 得点者シート --- */
+function openScorerSheet() {
+  if (state.players.length === 0) {
+    addMyGoal(null);
+    showToast('選手未登録のため得点者なしで加算しました');
+    return;
+  }
+  const list = document.getElementById('sheet-players');
+  list.innerHTML = state.players.map(p =>
+    `<button class="sheet-player" data-pid="${esc(p.id)}">${esc(formatScorer(p))}</button>`
+  ).join('');
+  document.getElementById('sheet-overlay').classList.add('open');
+}
+function closeScorerSheet() {
+  document.getElementById('sheet-overlay').classList.remove('open');
+}
+
+/* --- 試合の mutation --- */
+function setMyTeam(v)   { state.match.myTeam = v; saveMatch(); renderMatch(); }
+function addMyGoal(pidOrNull) {
+  state.match.myScore++;
+  state.match.scorers.push(pidOrNull);
+  saveMatch(); renderMatch();
+}
+function undoMyGoal() {
+  if (state.match.myScore === 0) return;
+  state.match.myScore--;
+  state.match.scorers.pop();
+  saveMatch(); renderMatch();
+}
+function addOpGoal()  { state.match.opScore++; saveMatch(); renderMatch(); }
+function undoOpGoal() {
+  if (state.match.opScore === 0) return;
+  state.match.opScore--;
+  saveMatch(); renderMatch();
+}
+
+/* ================= プレビュー ================= */
+function renderPreview() {
+  document.getElementById('preview-text').textContent = buildMessage(state.match, state.players);
+  document.getElementById('preview-warn').style.display =
+    state.match.opponent.trim() ? 'none' : 'block';
+}
+function upsertOpponent(name) {
+  name = name.trim();
+  if (!name) return;
+  const found = state.opponents.find(o => o.name === name);
+  if (found) found.lastUsed = today();
+  else state.opponents.push({ name, lastUsed: today() });
+  saveOpponents();
+}
+function confirmMatch() {
+  ensureToday();
+  state.match.finishedAt = new Date().toISOString();
+  state.todayMatches.matches.push(state.match);
+  saveToday();
+  upsertOpponent(state.match.opponent);
+  state.match = newMatch(state.match.myTeam); // 自チームは引き継ぐ
+  saveMatch();
+  showToast('確定しました。次の試合へ！');
+  showScreen('match');
+}
+
+/* ================= 今日の一覧 ================= */
+function renderToday() {
+  const list = document.getElementById('today-list');
+  const ms = state.todayMatches.matches;
+  document.getElementById('today-actions').style.display = ms.length > 0 ? 'block' : 'none';
+  if (ms.length === 0) {
+    list.innerHTML = '<div class="empty">今日の確定済み試合はありません</div>';
+    return;
+  }
+  list.innerHTML = ms.slice().reverse().map(m => {
+    const time = m.finishedAt
+      ? new Date(m.finishedAt).toTimeString().slice(0, 5) + ' 確定' : '';
+    const teamPart = m.myTeam ? esc(m.myTeam) + ' ' : '';
+    return `<div class="card match-card" data-mid="${esc(m.id)}">
+      <div class="summary">
+        <div class="line1">${teamPart}v.s ${esc(m.opponent || '（未入力）')}　${m.myScore}-${m.opScore}</div>
+        <div class="line2">${time}</div>
+      </div>
+      <button class="btn-small act-copy">コピー</button>
+      <button class="btn-small danger act-del">削除</button>
+    </div>`;
+  }).join('');
+}
+
+/* ================= 選手設定 ================= */
+function serializePlayers() {
+  return state.players.map(p => `${p.number},${p.name}`).join('\n');
+}
+function parseBulk(text) {
+  const players = [];
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const idx = line.search(/[,，]/);
+    let number, name;
+    if (idx === -1) { number = line; name = ''; }
+    else { number = line.slice(0, idx).trim(); name = line.slice(idx + 1).trim(); }
+    if (!number && !name) continue;
+    players.push({ id: uid(), number, name });
+  }
+  return players;
+}
+function renderPlayersScreen(refreshTextarea) {
+  if (refreshTextarea) {
+    document.getElementById('bulk-input').value = serializePlayers();
+  }
+  const list = document.getElementById('player-list');
+  if (state.players.length === 0) {
+    list.innerHTML = '<div class="empty">選手が登録されていません</div>';
+    return;
+  }
+  list.innerHTML = state.players.map(p => `
+    <div class="player-row" data-pid="${esc(p.id)}">
+      <input class="num" type="text" inputmode="numeric" placeholder="番号" value="${esc(p.number)}">
+      <input class="nm" type="text" placeholder="名前" value="${esc(p.name)}">
+      <button class="del">削除</button>
+    </div>`).join('');
+}
+
+/* ================= イベント配線 ================= */
+function wireEvents() {
+  // ナビ
+  document.querySelectorAll('nav button').forEach(b => {
+    b.addEventListener('click', () => showScreen(b.dataset.screen));
+  });
+
+  // --- 試合画面 ---
+  document.querySelectorAll('#team-segment button').forEach(b => {
+    b.addEventListener('click', () => setMyTeam(b.dataset.team));
+  });
+
+  const inp = document.getElementById('opponent-input');
+  inp.addEventListener('input', () => {
+    state.match.opponent = inp.value;
+    saveMatch();
+    renderSuggest();
+  });
+  inp.addEventListener('focus', renderSuggest);
+  inp.addEventListener('blur', () => setTimeout(hideSuggest, 200));
+  document.getElementById('suggest').addEventListener('click', e => {
+    const b = e.target.closest('button[data-name]');
+    if (!b) return;
+    state.match.opponent = b.dataset.name;
+    saveMatch();
+    hideSuggest();
+    renderMatch();
+  });
+
+  document.getElementById('my-plus').addEventListener('click', openScorerSheet);
+  document.getElementById('my-minus').addEventListener('click', undoMyGoal);
+  document.getElementById('op-plus').addEventListener('click', addOpGoal);
+  document.getElementById('op-minus').addEventListener('click', undoOpGoal);
+  document.getElementById('btn-finish').addEventListener('click', () => showScreen('preview'));
+
+  // --- 得点者シート ---
+  document.getElementById('sheet-players').addEventListener('click', e => {
+    const b = e.target.closest('button[data-pid]');
+    if (!b) return;
+    addMyGoal(b.dataset.pid);
+    closeScorerSheet();
+  });
+  document.getElementById('sheet-skip').addEventListener('click', () => {
+    addMyGoal(null);
+    closeScorerSheet();
+  });
+  document.getElementById('sheet-cancel').addEventListener('click', closeScorerSheet);
+  document.getElementById('sheet-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeScorerSheet();
+  });
+
+  // --- プレビュー ---
+  document.getElementById('btn-copy').addEventListener('click', async () => {
+    const ok = await copyText(buildMessage(state.match, state.players));
+    showToast(ok ? 'コピーしました' : 'コピーに失敗しました');
+  });
+  document.getElementById('btn-confirm').addEventListener('click', confirmMatch);
+  document.getElementById('btn-back').addEventListener('click', () => showScreen('match'));
+
+  // --- 今日の一覧 ---
+  document.getElementById('btn-copy-all').addEventListener('click', async () => {
+    const text = state.todayMatches.matches
+      .map(m => buildMessage(m, state.players)).join('\n\n');
+    const ok = await copyText(text);
+    showToast(ok ? '全試合をコピーしました' : 'コピーに失敗しました');
+  });
+  document.getElementById('today-list').addEventListener('click', async e => {
+    const card = e.target.closest('.match-card');
+    if (!card) return;
+    const m = state.todayMatches.matches.find(x => x.id === card.dataset.mid);
+    if (!m) return;
+    if (e.target.classList.contains('act-copy')) {
+      const ok = await copyText(buildMessage(m, state.players));
+      showToast(ok ? 'コピーしました' : 'コピーに失敗しました');
+    } else if (e.target.classList.contains('act-del')) {
+      if (!confirm('この試合を削除しますか？')) return;
+      state.todayMatches.matches = state.todayMatches.matches.filter(x => x.id !== m.id);
+      saveToday();
+      renderToday();
+    }
+  });
+
+  // --- 選手設定 ---
+  document.getElementById('btn-bulk').addEventListener('click', () => {
+    const text = document.getElementById('bulk-input').value;
+    const players = parseBulk(text);
+    if (state.players.length > 0 && !confirm('現在の選手リストを置き換えます。よろしいですか？')) return;
+    state.players = players;
+    savePlayers();
+    renderPlayersScreen(true);
+    showToast(`${players.length}人を登録しました`);
+  });
+  document.getElementById('btn-add-player').addEventListener('click', () => {
+    state.players.push({ id: uid(), number: '', name: '' });
+    savePlayers();
+    renderPlayersScreen(true);
+  });
+  document.getElementById('player-list').addEventListener('change', e => {
+    const row = e.target.closest('.player-row');
+    if (!row) return;
+    const p = state.players.find(x => x.id === row.dataset.pid);
+    if (!p) return;
+    p.number = row.querySelector('.num').value.trim();
+    p.name = row.querySelector('.nm').value.trim();
+    savePlayers();
+  });
+  document.getElementById('player-list').addEventListener('click', e => {
+    if (!e.target.classList.contains('del')) return;
+    const row = e.target.closest('.player-row');
+    const p = state.players.find(x => x.id === row.dataset.pid);
+    if (!p) return;
+    const label = formatScorer(p.number || p.name ? p : { number: '', name: '（空欄）' });
+    if (!confirm(`${label} を削除しますか？`)) return;
+    state.players = state.players.filter(x => x.id !== p.id);
+    savePlayers();
+    renderPlayersScreen(true);
+  });
+}
+
+/* ================= 初期化 ================= */
+function init() {
+  if (!storageOK) document.getElementById('storage-warning').style.display = 'block';
+
+  store.save(KEY.version, 1);
+  state.players = store.load(KEY.players, []);
+  state.opponents = store.load(KEY.opponents, []).filter(o => o && o.name && withinDays(o.lastUsed, 30));
+  saveOpponents();
+
+  const tm = store.load(KEY.today, null);
+  state.todayMatches = (tm && tm.date === today()) ? tm : { date: today(), matches: [] };
+  saveToday();
+
+  const cm = store.load(KEY.current, null);
+  state.match = (cm && typeof cm.myScore === 'number') ? cm : newMatch();
+  saveMatch();
+
+  wireEvents();
+  showScreen('match');
+}
+
+init();
+</script>
+</body>
+</html>
