@@ -13,7 +13,6 @@
     --c-accent: #1565d8;
     --c-accent-dark: #0e4ca8;
     --c-gray: #8a97a8;
-    --c-gray-dark: #6b7888;
     --c-danger: #d83a3a;
     --c-border: #d8dfe8;
     --radius: 12px;
@@ -26,7 +25,7 @@
     user-select: none; -webkit-user-select: none;
   }
   button { font-family: inherit; touch-action: manipulation; cursor: pointer; }
-  input, textarea { font-family: inherit; font-size: 16px; } /* 16px以上でiOSのズーム防止 */
+  input, textarea { font-family: inherit; font-size: 16px; }
 
   .app { max-width: 480px; margin: 0 auto; padding: 0 12px 96px; }
 
@@ -102,7 +101,16 @@
   .btn-minus:disabled { opacity: .35; }
   .score-divider { display: flex; align-items: center; font-size: 24px; color: var(--c-sub); padding-top: 38px; }
 
-  .scorer-log { margin-top: 12px; font-size: 13px; color: var(--c-sub); line-height: 1.7; }
+  .scorer-log { margin-top: 12px; }
+  .scorer-log .goal-entry {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 10px; margin-top: 4px; border-radius: 8px;
+    font-size: 13px; color: var(--c-sub); line-height: 1.4;
+    background: var(--c-bg); border: none; width: 100%; text-align: left;
+    cursor: pointer;
+  }
+  .scorer-log .goal-entry:active { background: #e8f0fd; }
+  .scorer-log .goal-entry .edit-hint { font-size: 11px; color: var(--c-border); flex-shrink: 0; margin-left: 6px; }
 
   /* ===== 大ボタン ===== */
   .btn-primary {
@@ -158,7 +166,7 @@
   }
   .hint { font-size: 12px; color: var(--c-sub); line-height: 1.6; margin-top: 8px; }
 
-  /* ===== 得点者シート ===== */
+  /* ===== 得点者/アシストシート ===== */
   #sheet-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: none;
   }
@@ -167,7 +175,8 @@
     background: var(--c-card); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
     max-height: 75vh; overflow-y: auto; max-width: 480px; width: 100%; margin: 0 auto;
   }
-  #sheet h2 { font-size: 15px; margin: 0 0 12px; color: var(--c-sub); }
+  #sheet-title { font-size: 15px; margin: 0 0 12px; color: var(--c-sub); font-weight: 400; }
+  #sheet-step { font-size: 11px; color: var(--c-accent); font-weight: 700; margin-bottom: 4px; }
   .sheet-player {
     display: block; width: 100%; padding: 16px; font-size: 17px; font-weight: 700; text-align: left;
     background: var(--c-bg); border: none; border-radius: var(--radius); margin-bottom: 8px;
@@ -199,7 +208,7 @@
 
   <!-- ============ 試合画面 ============ -->
   <section id="screen-match" class="screen">
-    <h1>試合</h1>
+    <h1 id="match-heading">試合</h1>
     <div class="card">
       <div class="label">自チーム（混合のときは「なし」）</div>
       <div class="segment" id="team-segment">
@@ -279,10 +288,11 @@
   </section>
 </div>
 
-<!-- ============ 得点者シート ============ -->
+<!-- ============ 得点者/アシストシート ============ -->
 <div id="sheet-overlay">
   <div id="sheet">
-    <h2>得点した選手をタップ</h2>
+    <div id="sheet-step"></div>
+    <p id="sheet-title">得点した選手をタップ</p>
     <div id="sheet-players"></div>
     <button class="sheet-skip" id="sheet-skip">スキップ（得点者なし / 不明）</button>
     <button class="sheet-cancel" id="sheet-cancel">キャンセル（加算しない）</button>
@@ -310,11 +320,8 @@ const KEY = {
 };
 
 function checkStorage() {
-  try {
-    localStorage.setItem('fs.__test', '1');
-    localStorage.removeItem('fs.__test');
-    return true;
-  } catch (e) { return false; }
+  try { localStorage.setItem('fs.__test', '1'); localStorage.removeItem('fs.__test'); return true; }
+  catch (e) { return false; }
 }
 const storageOK = checkStorage();
 const mem = {};
@@ -332,33 +339,35 @@ const store = {
     if (!storageOK) { mem[key] = value; return; }
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
   },
-  remove(key) {
-    if (!storageOK) { delete mem[key]; return; }
-    try { localStorage.removeItem(key); } catch (e) {}
-  },
 };
 
 /* ================= ユーティリティ ================= */
 function uid() {
-  return (crypto.randomUUID) ? crypto.randomUUID()
-    : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  return crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 function today() {
-  const d = new Date();
-  const p = n => String(n).padStart(2, '0');
+  const d = new Date(), p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 function withinDays(dateStr, days) {
   const t = new Date(dateStr + 'T00:00:00').getTime();
-  if (isNaN(t)) return false;
-  return (Date.now() - t) <= days * 86400000;
+  return !isNaN(t) && (Date.now() - t) <= days * 86400000;
 }
 function esc(s) {
-  return String(s).replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* ================= 状態 ================= */
+/* ================= データモデル
+  scorers: [{pid: string|null, assist: string|null}]
+  pid = null はスキップ（得点者不明）
+  assist = null はアシストなし
+  ※旧形式（string|null の直値）は読み込み時に移行する
+================= */
+function normalizeScorerEntry(e) {
+  if (e === null || typeof e === 'string') return { pid: e, assist: null };
+  return e;
+}
+
 function newMatch(myTeam = '') {
   return { id: uid(), myTeam, opponent: '', myScore: 0, opScore: 0, scorers: [], finishedAt: null };
 }
@@ -377,36 +386,42 @@ function formatScorer(p) {
   if (p.number) return `#${p.number}`;
   return `#${p.name}`;
 }
-function buildMessage(match, players) {
+
+function buildMessage(match, players, matchNumber) {
   const lines = [];
+  lines.push(`第${matchNumber}戦`);
   if (match.myTeam) lines.push(match.myTeam);
   lines.push(`v.s ${match.opponent || '（相手チーム名未入力）'}`);
   lines.push(`${match.myScore}-${match.opScore}`);
-  for (const pid of match.scorers) {
-    if (pid === null) continue;
-    const p = players.find(x => x.id === pid);
-    if (p) lines.push(formatScorer(p));
+  for (const raw of match.scorers) {
+    const entry = normalizeScorerEntry(raw);
+    if (entry.pid === null) continue;
+    const p = players.find(x => x.id === entry.pid);
+    if (!p) continue;
+    let line = formatScorer(p);
+    if (entry.assist) {
+      const a = players.find(x => x.id === entry.assist);
+      if (a) line += `（${formatScorer(a)}）`;
+    }
+    lines.push(line);
   }
   return lines.join('\n');
 }
 
+/* 今日の試合番号：確定済み件数 + 1 */
+function currentMatchNumber() {
+  return state.todayMatches.matches.length + 1;
+}
+
 /* ================= コピー ================= */
 async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (e) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
     try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      return ok;
+      const ta = Object.assign(document.createElement('textarea'),
+        { value: text, style: 'position:fixed;opacity:0' });
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand('copy'); ta.remove(); return ok;
     } catch (e2) { return false; }
   }
 }
@@ -415,17 +430,16 @@ async function copyText(text) {
 let toastTimer = null;
 function showToast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
 }
 
 /* ================= 保存ヘルパ ================= */
-function saveMatch()   { store.save(KEY.current, state.match); }
-function savePlayers() { store.save(KEY.players, state.players); }
+function saveMatch()     { store.save(KEY.current, state.match); }
+function savePlayers()   { store.save(KEY.players, state.players); }
 function saveOpponents() { store.save(KEY.opponents, state.opponents); }
-function saveToday()   { store.save(KEY.today, state.todayMatches); }
+function saveToday()     { store.save(KEY.today, state.todayMatches); }
 
 function ensureToday() {
   if (state.todayMatches.date !== today()) {
@@ -451,47 +465,55 @@ function showScreen(name) {
 
 /* ================= 試合画面 ================= */
 function renderMatch() {
-  // セグメント
+  // 見出しに何戦目か表示
+  document.getElementById('match-heading').textContent = `試合（第${currentMatchNumber()}戦）`;
+
   document.querySelectorAll('#team-segment button').forEach(b => {
     b.classList.toggle('selected', b.dataset.team === state.match.myTeam);
   });
-  // 相手名 input（フォーカス外のときだけ同期。IME保護）
   const inp = document.getElementById('opponent-input');
   if (document.activeElement !== inp && inp.value !== state.match.opponent) {
     inp.value = state.match.opponent;
   }
-  // スコア
   document.getElementById('my-label').textContent = state.match.myTeam || '自チーム';
   document.getElementById('op-label').textContent = state.match.opponent || '相手';
   document.getElementById('my-score').textContent = state.match.myScore;
   document.getElementById('op-score').textContent = state.match.opScore;
   document.getElementById('my-minus').disabled = state.match.myScore === 0;
   document.getElementById('op-minus').disabled = state.match.opScore === 0;
-  // 得点者ログ
-  const log = state.match.scorers.map((pid, i) => {
-    if (pid === null) return `${i + 1}点目: （得点者なし）`;
-    const p = state.players.find(x => x.id === pid);
-    return `${i + 1}点目: ${p ? esc(formatScorer(p)) : '（削除済みの選手）'}`;
+
+  // 得点者ログ（タップでアシスト編集）
+  const log = state.match.scorers.map((raw, i) => {
+    const entry = normalizeScorerEntry(raw);
+    let main;
+    if (entry.pid === null) {
+      main = `${i + 1}点目: （得点者なし）`;
+    } else {
+      const p = state.players.find(x => x.id === entry.pid);
+      main = `${i + 1}点目: ${p ? esc(formatScorer(p)) : '（削除済みの選手）'}`;
+      if (entry.assist) {
+        const a = state.players.find(x => x.id === entry.assist);
+        if (a) main += ` <span style="color:var(--c-accent)">A:${esc(formatScorer(a))}</span>`;
+      }
+    }
+    const hint = entry.pid !== null ? '<span class="edit-hint">A編集 ›</span>' : '';
+    return `<button class="goal-entry" data-goal-index="${i}">${main}${hint}</button>`;
   });
-  document.getElementById('scorer-log').innerHTML = log.join('<br>');
+  document.getElementById('scorer-log').innerHTML = log.join('');
 }
 
 /* --- 相手名サジェスト --- */
 function renderSuggest() {
   const inp = document.getElementById('opponent-input');
   const box = document.getElementById('suggest');
-  const q = inp.value.trim();
-  const td = today();
+  const q = inp.value.trim(), td = today();
   const cands = state.opponents
-    .filter(o => !q || o.name.includes(q))
-    .filter(o => o.name !== q)
+    .filter(o => (!q || o.name.includes(q)) && o.name !== q)
     .sort((a, b) => {
       const at = a.lastUsed === td ? 1 : 0, bt = b.lastUsed === td ? 1 : 0;
-      if (at !== bt) return bt - at;
-      return b.lastUsed.localeCompare(a.lastUsed);
-    })
-    .slice(0, 8);
-  if (cands.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+      return at !== bt ? bt - at : b.lastUsed.localeCompare(a.lastUsed);
+    }).slice(0, 8);
+  if (!cands.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
   box.innerHTML = cands.map(o =>
     `<button type="button" data-name="${esc(o.name)}">${esc(o.name)}${o.lastUsed === td ? '<span class="today-mark">今日</span>' : ''}</button>`
   ).join('');
@@ -499,32 +521,90 @@ function renderSuggest() {
 }
 function hideSuggest() {
   const box = document.getElementById('suggest');
-  box.style.display = 'none';
-  box.innerHTML = '';
+  box.style.display = 'none'; box.innerHTML = '';
 }
 
-/* --- 得点者シート --- */
+/* ================= 得点者/アシストシート ================= */
+let sheetMode = 'scorer'; // 'scorer' | 'assist' | 'edit-assist'
+let pendingPid = null;    // 得点者確定後、アシスト待ちの pid
+let pendingEditIndex = -1; // edit-assist: 編集対象のscorerインデックス
+
+function renderSheetPlayers(excludePid) {
+  document.getElementById('sheet-players').innerHTML = state.players
+    .filter(p => p.id !== excludePid)
+    .map(p => `<button class="sheet-player" data-pid="${esc(p.id)}">${esc(formatScorer(p))}</button>`)
+    .join('');
+}
+
 function openScorerSheet() {
   if (state.players.length === 0) {
-    addMyGoal(null);
+    addMyGoal(null, null);
     showToast('選手未登録のため得点者なしで加算しました');
     return;
   }
-  const list = document.getElementById('sheet-players');
-  list.innerHTML = state.players.map(p =>
-    `<button class="sheet-player" data-pid="${esc(p.id)}">${esc(formatScorer(p))}</button>`
-  ).join('');
+  sheetMode = 'scorer';
+  pendingPid = null;
+  document.getElementById('sheet-step').textContent = 'STEP 1/2';
+  document.getElementById('sheet-title').textContent = '得点した選手をタップ';
+  const skip = document.getElementById('sheet-skip');
+  skip.textContent = 'スキップ（得点者なし / 不明）';
+  document.getElementById('sheet-cancel').style.display = '';
+  // 得点者モードではスキップを選手リストの下に戻す
+  const sheet = document.getElementById('sheet');
+  const cancel = document.getElementById('sheet-cancel');
+  sheet.insertBefore(skip, cancel);
+  renderSheetPlayers(null);
   document.getElementById('sheet-overlay').classList.add('open');
 }
-function closeScorerSheet() {
+
+function openAssistSheet(scorerPid) {
+  pendingPid = scorerPid;
+  sheetMode = 'assist';
+  const scorerName = scorerPid
+    ? (() => { const p = state.players.find(x => x.id === scorerPid); return p ? formatScorer(p) : ''; })()
+    : '（得点者なし）';
+  document.getElementById('sheet-step').textContent = 'STEP 2/2';
+  document.getElementById('sheet-title').textContent = `アシストした選手をタップ（${scorerName}）`;
+  const skip = document.getElementById('sheet-skip');
+  skip.textContent = 'アシストなし';
+  document.getElementById('sheet-cancel').style.display = 'none';
+  // アシストモードではスキップを選手リストの上に移動
+  const sheet = document.getElementById('sheet');
+  const playersDiv = document.getElementById('sheet-players');
+  sheet.insertBefore(skip, playersDiv);
+  renderSheetPlayers(scorerPid); // 得点者本人を除外
+}
+
+function openEditAssistSheet(index) {
+  const entry = normalizeScorerEntry(state.match.scorers[index]);
+  pendingEditIndex = index;
+  sheetMode = 'edit-assist';
+  const p = state.players.find(x => x.id === entry.pid);
+  const scorerName = p ? formatScorer(p) : '（削除済みの選手）';
+  document.getElementById('sheet-step').textContent = 'アシスト編集';
+  document.getElementById('sheet-title').textContent = `${index + 1}点目（${scorerName}）のアシストを変更`;
+  const skip = document.getElementById('sheet-skip');
+  skip.textContent = entry.assist ? 'アシストを削除' : 'アシストなし';
+  const cancel = document.getElementById('sheet-cancel');
+  cancel.style.display = '';
+  cancel.textContent = 'キャンセル';
+  // スキップを選手リストの上に
+  const sheet = document.getElementById('sheet');
+  sheet.insertBefore(skip, document.getElementById('sheet-players'));
+  renderSheetPlayers(entry.pid); // 得点者本人を除外
+  document.getElementById('sheet-overlay').classList.add('open');
+}
+
+function closeSheet() {
   document.getElementById('sheet-overlay').classList.remove('open');
 }
 
-/* --- 試合の mutation --- */
-function setMyTeam(v)   { state.match.myTeam = v; saveMatch(); renderMatch(); }
-function addMyGoal(pidOrNull) {
+/* ================= 試合の mutation ================= */
+function setMyTeam(v) { state.match.myTeam = v; saveMatch(); renderMatch(); }
+
+function addMyGoal(pid, assist) {
   state.match.myScore++;
-  state.match.scorers.push(pidOrNull);
+  state.match.scorers.push({ pid: pid ?? null, assist: assist ?? null });
   saveMatch(); renderMatch();
 }
 function undoMyGoal() {
@@ -542,13 +622,13 @@ function undoOpGoal() {
 
 /* ================= プレビュー ================= */
 function renderPreview() {
-  document.getElementById('preview-text').textContent = buildMessage(state.match, state.players);
+  const n = currentMatchNumber();
+  document.getElementById('preview-text').textContent = buildMessage(state.match, state.players, n);
   document.getElementById('preview-warn').style.display =
     state.match.opponent.trim() ? 'none' : 'block';
 }
 function upsertOpponent(name) {
-  name = name.trim();
-  if (!name) return;
+  name = name.trim(); if (!name) return;
   const found = state.opponents.find(o => o.name === name);
   if (found) found.lastUsed = today();
   else state.opponents.push({ name, lastUsed: today() });
@@ -560,7 +640,7 @@ function confirmMatch() {
   state.todayMatches.matches.push(state.match);
   saveToday();
   upsertOpponent(state.match.opponent);
-  state.match = newMatch(state.match.myTeam); // 自チームは引き継ぐ
+  state.match = newMatch(state.match.myTeam);
   saveMatch();
   showToast('確定しました。次の試合へ！');
   showScreen('match');
@@ -571,17 +651,14 @@ function renderToday() {
   const list = document.getElementById('today-list');
   const ms = state.todayMatches.matches;
   document.getElementById('today-actions').style.display = ms.length > 0 ? 'block' : 'none';
-  if (ms.length === 0) {
-    list.innerHTML = '<div class="empty">今日の確定済み試合はありません</div>';
-    return;
-  }
-  list.innerHTML = ms.slice().reverse().map(m => {
-    const time = m.finishedAt
-      ? new Date(m.finishedAt).toTimeString().slice(0, 5) + ' 確定' : '';
+  if (!ms.length) { list.innerHTML = '<div class="empty">今日の確定済み試合はありません</div>'; return; }
+  list.innerHTML = ms.slice().reverse().map((m, revIdx) => {
+    const n = ms.length - revIdx; // 試合番号（逆順表示でも番号は正順）
+    const time = m.finishedAt ? new Date(m.finishedAt).toTimeString().slice(0, 5) + ' 確定' : '';
     const teamPart = m.myTeam ? esc(m.myTeam) + ' ' : '';
-    return `<div class="card match-card" data-mid="${esc(m.id)}">
+    return `<div class="card match-card" data-mid="${esc(m.id)}" data-n="${n}">
       <div class="summary">
-        <div class="line1">${teamPart}v.s ${esc(m.opponent || '（未入力）')}　${m.myScore}-${m.opScore}</div>
+        <div class="line1">第${n}戦 ${teamPart}v.s ${esc(m.opponent || '（未入力）')}　${m.myScore}-${m.opScore}</div>
         <div class="line2">${time}</div>
       </div>
       <button class="btn-small act-copy">コピー</button>
@@ -591,32 +668,22 @@ function renderToday() {
 }
 
 /* ================= 選手設定 ================= */
-function serializePlayers() {
-  return state.players.map(p => `${p.number},${p.name}`).join('\n');
-}
+function serializePlayers() { return state.players.map(p => `${p.number},${p.name}`).join('\n'); }
 function parseBulk(text) {
-  const players = [];
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
+  return text.split('\n').reduce((acc, rawLine) => {
+    const line = rawLine.trim(); if (!line) return acc;
     const idx = line.search(/[,，]/);
     let number, name;
     if (idx === -1) { number = line; name = ''; }
     else { number = line.slice(0, idx).trim(); name = line.slice(idx + 1).trim(); }
-    if (!number && !name) continue;
-    players.push({ id: uid(), number, name });
-  }
-  return players;
+    if (!number && !name) return acc;
+    acc.push({ id: uid(), number, name }); return acc;
+  }, []);
 }
 function renderPlayersScreen(refreshTextarea) {
-  if (refreshTextarea) {
-    document.getElementById('bulk-input').value = serializePlayers();
-  }
+  if (refreshTextarea) document.getElementById('bulk-input').value = serializePlayers();
   const list = document.getElementById('player-list');
-  if (state.players.length === 0) {
-    list.innerHTML = '<div class="empty">選手が登録されていません</div>';
-    return;
-  }
+  if (!state.players.length) { list.innerHTML = '<div class="empty">選手が登録されていません</div>'; return; }
   list.innerHTML = state.players.map(p => `
     <div class="player-row" data-pid="${esc(p.id)}">
       <input class="num" type="text" inputmode="numeric" placeholder="番号" value="${esc(p.number)}">
@@ -628,30 +695,21 @@ function renderPlayersScreen(refreshTextarea) {
 /* ================= イベント配線 ================= */
 function wireEvents() {
   // ナビ
-  document.querySelectorAll('nav button').forEach(b => {
-    b.addEventListener('click', () => showScreen(b.dataset.screen));
-  });
+  document.querySelectorAll('nav button').forEach(b =>
+    b.addEventListener('click', () => showScreen(b.dataset.screen)));
 
-  // --- 試合画面 ---
-  document.querySelectorAll('#team-segment button').forEach(b => {
-    b.addEventListener('click', () => setMyTeam(b.dataset.team));
-  });
+  // 試合画面
+  document.querySelectorAll('#team-segment button').forEach(b =>
+    b.addEventListener('click', () => setMyTeam(b.dataset.team)));
 
   const inp = document.getElementById('opponent-input');
-  inp.addEventListener('input', () => {
-    state.match.opponent = inp.value;
-    saveMatch();
-    renderSuggest();
-  });
+  inp.addEventListener('input', () => { state.match.opponent = inp.value; saveMatch(); renderSuggest(); });
   inp.addEventListener('focus', renderSuggest);
   inp.addEventListener('blur', () => setTimeout(hideSuggest, 200));
   document.getElementById('suggest').addEventListener('click', e => {
-    const b = e.target.closest('button[data-name]');
-    if (!b) return;
-    state.match.opponent = b.dataset.name;
-    saveMatch();
-    hideSuggest();
-    renderMatch();
+    const b = e.target.closest('button[data-name]'); if (!b) return;
+    inp.value = state.match.opponent = b.dataset.name;
+    saveMatch(); hideSuggest(); renderMatch();
   });
 
   document.getElementById('my-plus').addEventListener('click', openScorerSheet);
@@ -660,96 +718,107 @@ function wireEvents() {
   document.getElementById('op-minus').addEventListener('click', undoOpGoal);
   document.getElementById('btn-finish').addEventListener('click', () => showScreen('preview'));
 
-  // --- 得点者シート ---
+  // 得点者/アシストシート
   document.getElementById('sheet-players').addEventListener('click', e => {
-    const b = e.target.closest('button[data-pid]');
-    if (!b) return;
-    addMyGoal(b.dataset.pid);
-    closeScorerSheet();
+    const b = e.target.closest('button[data-pid]'); if (!b) return;
+    if (sheetMode === 'scorer') {
+      openAssistSheet(b.dataset.pid);
+    } else if (sheetMode === 'assist') {
+      addMyGoal(pendingPid, b.dataset.pid);
+      closeSheet();
+    } else { // edit-assist
+      const entry = normalizeScorerEntry(state.match.scorers[pendingEditIndex]);
+      state.match.scorers[pendingEditIndex] = { pid: entry.pid, assist: b.dataset.pid };
+      saveMatch(); renderMatch(); closeSheet();
+    }
   });
   document.getElementById('sheet-skip').addEventListener('click', () => {
-    addMyGoal(null);
-    closeScorerSheet();
+    if (sheetMode === 'scorer') {
+      addMyGoal(null, null); closeSheet();
+    } else if (sheetMode === 'assist') {
+      addMyGoal(pendingPid, null); closeSheet();
+    } else { // edit-assist: アシストを削除/なしに
+      const entry = normalizeScorerEntry(state.match.scorers[pendingEditIndex]);
+      state.match.scorers[pendingEditIndex] = { pid: entry.pid, assist: null };
+      saveMatch(); renderMatch(); closeSheet();
+    }
   });
-  document.getElementById('sheet-cancel').addEventListener('click', closeScorerSheet);
+  document.getElementById('sheet-cancel').addEventListener('click', closeSheet);
   document.getElementById('sheet-overlay').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeScorerSheet();
+    if (e.target === e.currentTarget) {
+      if (sheetMode === 'scorer' || sheetMode === 'edit-assist') closeSheet();
+      else { addMyGoal(pendingPid, null); closeSheet(); }
+    }
   });
 
-  // --- プレビュー ---
+  // 得点者ログのアシスト編集
+  document.getElementById('scorer-log').addEventListener('click', e => {
+    const el = e.target.closest('[data-goal-index]'); if (!el) return;
+    openEditAssistSheet(Number(el.dataset.goalIndex));
+  });
+
+  // プレビュー
   document.getElementById('btn-copy').addEventListener('click', async () => {
-    const ok = await copyText(buildMessage(state.match, state.players));
+    const ok = await copyText(buildMessage(state.match, state.players, currentMatchNumber()));
     showToast(ok ? 'コピーしました' : 'コピーに失敗しました');
   });
   document.getElementById('btn-confirm').addEventListener('click', confirmMatch);
   document.getElementById('btn-back').addEventListener('click', () => showScreen('match'));
 
-  // --- 今日の一覧 ---
+  // 今日の一覧
   document.getElementById('btn-copy-all').addEventListener('click', async () => {
-    const text = state.todayMatches.matches
-      .map(m => buildMessage(m, state.players)).join('\n\n');
+    const text = state.todayMatches.matches.map((m, i) => buildMessage(m, state.players, i + 1)).join('\n\n');
     const ok = await copyText(text);
     showToast(ok ? '全試合をコピーしました' : 'コピーに失敗しました');
   });
   document.getElementById('today-list').addEventListener('click', async e => {
-    const card = e.target.closest('.match-card');
-    if (!card) return;
-    const m = state.todayMatches.matches.find(x => x.id === card.dataset.mid);
-    if (!m) return;
+    const card = e.target.closest('.match-card'); if (!card) return;
+    const m = state.todayMatches.matches.find(x => x.id === card.dataset.mid); if (!m) return;
+    const n = Number(card.dataset.n);
     if (e.target.classList.contains('act-copy')) {
-      const ok = await copyText(buildMessage(m, state.players));
+      const ok = await copyText(buildMessage(m, state.players, n));
       showToast(ok ? 'コピーしました' : 'コピーに失敗しました');
     } else if (e.target.classList.contains('act-del')) {
       if (!confirm('この試合を削除しますか？')) return;
       state.todayMatches.matches = state.todayMatches.matches.filter(x => x.id !== m.id);
-      saveToday();
-      renderToday();
+      saveToday(); renderToday();
     }
   });
 
-  // --- 選手設定 ---
+  // 選手設定
   document.getElementById('btn-bulk').addEventListener('click', () => {
-    const text = document.getElementById('bulk-input').value;
-    const players = parseBulk(text);
+    const players = parseBulk(document.getElementById('bulk-input').value);
     if (state.players.length > 0 && !confirm('現在の選手リストを置き換えます。よろしいですか？')) return;
-    state.players = players;
-    savePlayers();
-    renderPlayersScreen(true);
+    state.players = players; savePlayers(); renderPlayersScreen(true);
     showToast(`${players.length}人を登録しました`);
   });
   document.getElementById('btn-add-player').addEventListener('click', () => {
     state.players.push({ id: uid(), number: '', name: '' });
-    savePlayers();
-    renderPlayersScreen(true);
+    savePlayers(); renderPlayersScreen(true);
   });
   document.getElementById('player-list').addEventListener('change', e => {
-    const row = e.target.closest('.player-row');
-    if (!row) return;
-    const p = state.players.find(x => x.id === row.dataset.pid);
-    if (!p) return;
+    const row = e.target.closest('.player-row'); if (!row) return;
+    const p = state.players.find(x => x.id === row.dataset.pid); if (!p) return;
     p.number = row.querySelector('.num').value.trim();
-    p.name = row.querySelector('.nm').value.trim();
+    p.name   = row.querySelector('.nm').value.trim();
     savePlayers();
   });
   document.getElementById('player-list').addEventListener('click', e => {
     if (!e.target.classList.contains('del')) return;
     const row = e.target.closest('.player-row');
-    const p = state.players.find(x => x.id === row.dataset.pid);
-    if (!p) return;
-    const label = formatScorer(p.number || p.name ? p : { number: '', name: '（空欄）' });
-    if (!confirm(`${label} を削除しますか？`)) return;
+    const p = state.players.find(x => x.id === row.dataset.pid); if (!p) return;
+    if (!confirm(`${formatScorer(p.number || p.name ? p : {number:'', name:'（空欄）'})} を削除しますか？`)) return;
     state.players = state.players.filter(x => x.id !== p.id);
-    savePlayers();
-    renderPlayersScreen(true);
+    savePlayers(); renderPlayersScreen(true);
   });
 }
 
 /* ================= 初期化 ================= */
 function init() {
   if (!storageOK) document.getElementById('storage-warning').style.display = 'block';
-
   store.save(KEY.version, 1);
-  state.players = store.load(KEY.players, []);
+
+  state.players   = store.load(KEY.players, []);
   state.opponents = store.load(KEY.opponents, []).filter(o => o && o.name && withinDays(o.lastUsed, 30));
   saveOpponents();
 
@@ -759,6 +828,10 @@ function init() {
 
   const cm = store.load(KEY.current, null);
   state.match = (cm && typeof cm.myScore === 'number') ? cm : newMatch();
+  // 旧形式の scorers を正規化
+  if (state.match.scorers) {
+    state.match.scorers = state.match.scorers.map(normalizeScorerEntry);
+  }
   saveMatch();
 
   wireEvents();
