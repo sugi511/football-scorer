@@ -127,6 +127,11 @@
     color: var(--c-sub); background: none; border: 1px solid var(--c-border); border-radius: var(--radius);
   }
   .stack > * + * { margin-top: 10px; }
+  .btn-reset {
+    display: block; width: 100%; padding: 14px; font-size: 15px; font-weight: 700;
+    color: var(--c-danger); background: #fdecec; border: none; border-radius: var(--radius);
+  }
+  .btn-reset:active { background: #f5c0c0; }
 
   /* ===== プレビュー ===== */
   #preview-text {
@@ -284,6 +289,13 @@
       <div class="label">個別編集</div>
       <div id="player-list"></div>
       <button class="btn-ghost" id="btn-add-player">＋ 選手を追加</button>
+    </div>
+    <div class="card" style="border: 1px solid #f5c0c0;">
+      <div class="label" style="color:var(--c-danger)">⚠ リセット</div>
+      <div class="stack">
+        <button class="btn-reset" id="btn-reset-today">今日の試合一覧をリセット</button>
+        <button class="btn-reset" id="btn-reset-players">選手リストをリセット</button>
+      </div>
     </div>
   </section>
 </div>
@@ -810,6 +822,29 @@ function wireEvents() {
     if (!confirm(`${formatScorer(p.number || p.name ? p : {number:'', name:'（空欄）'})} を削除しますか？`)) return;
     state.players = state.players.filter(x => x.id !== p.id);
     savePlayers(); renderPlayersScreen(true);
+  });
+
+  // リセットボタン（2回確認）
+  document.getElementById('btn-reset-today').addEventListener('click', () => {
+    const n = state.todayMatches.matches.length;
+    if (n === 0) { showToast('今日の試合一覧はすでに空です'); return; }
+    if (!confirm(`今日の試合一覧（${n}試合）を削除します。よろしいですか？`)) return;
+    if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
+    state.todayMatches = { date: today(), matches: [] };
+    saveToday();
+    showToast('今日の試合一覧をリセットしました');
+    renderPlayersScreen(false);
+  });
+
+  document.getElementById('btn-reset-players').addEventListener('click', () => {
+    const n = state.players.length;
+    if (n === 0) { showToast('選手リストはすでに空です'); return; }
+    if (!confirm(`選手リスト（${n}人）を全員削除します。よろしいですか？`)) return;
+    if (!confirm('本当に削除しますか？この操作は取り消せません。')) return;
+    state.players = [];
+    savePlayers();
+    showToast('選手リストをリセットしました');
+    renderPlayersScreen(true);
   });
 }
 
