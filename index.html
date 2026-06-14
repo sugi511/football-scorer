@@ -329,6 +329,7 @@ const KEY = {
   opponents: 'fs.opponents',
   current: 'fs.currentMatch',
   today: 'fs.todayMatches',
+  resetDeclined: 'fs.resetDeclined', // リセットを断った日付
 };
 
 function checkStorage() {
@@ -453,10 +454,35 @@ function savePlayers()   { store.save(KEY.players, state.players); }
 function saveOpponents() { store.save(KEY.opponents, state.opponents); }
 function saveToday()     { store.save(KEY.today, state.todayMatches); }
 
+/* 試合確定など途中処理用：データがなければ日付更新のみ、あれば何もしない */
+function ensureTodaySilent() {
+  if (state.todayMatches.date === today()) return;
+  if (state.todayMatches.matches.length === 0) {
+    state.todayMatches.date = today();
+    saveToday();
+  }
+  // データがある場合はそのまま（今日一覧を開いたときに確認する）
+}
+
+/* 今日一覧を開くとき用：日付変わっていたらリセットを確認 */
 function ensureToday() {
-  if (state.todayMatches.date !== today()) {
+  if (state.todayMatches.date === today()) return;
+  if (state.todayMatches.matches.length === 0) {
+    state.todayMatches = { date: today(), matches: [] };
+    saveToday(); return;
+  }
+  // 今日すでに断った？
+  if (store.load(KEY.resetDeclined, '') === today()) return;
+
+  const oldDate = state.todayMatches.date;
+  const n = state.todayMatches.matches.length;
+  const yes = confirm(`日付が変わりました（${oldDate} → ${today()}）。\n前回の試合一覧（${n}試合）をリセットしますか？`);
+  if (yes) {
     state.todayMatches = { date: today(), matches: [] };
     saveToday();
+  } else {
+    store.save(KEY.resetDeclined, today());
+    showToast('リセットは「選手設定」→「リセット」から行えます');
   }
 }
 
@@ -647,7 +673,7 @@ function upsertOpponent(name) {
   saveOpponents();
 }
 function confirmMatch() {
-  ensureToday();
+  ensureTodaySilent();
   state.match.finishedAt = new Date().toISOString();
   state.todayMatches.matches.push(state.match);
   saveToday();
@@ -858,8 +884,8 @@ function init() {
   saveOpponents();
 
   const tm = store.load(KEY.today, null);
-  state.todayMatches = (tm && tm.date === today()) ? tm : { date: today(), matches: [] };
-  saveToday();
+  // 起動時は自動リセットしない。日付チェックは「今日の一覧」を開いたときに行う
+  state.todayMatches = tm || { date: today(), matches: [] };
 
   const cm = store.load(KEY.current, null);
   state.match = (cm && typeof cm.myScore === 'number') ? cm : newMatch();
