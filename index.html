@@ -815,7 +815,7 @@ function wireEvents() {
       closeSheet();
     } else { // edit-assist
       const entry = normalizeScorerEntry(state.match.scorers[pendingEditIndex]);
-      state.match.scorers[pendingEditIndex] = { pid: entry.pid, assist: b.dataset.pid };
+      state.match.scorers[pendingEditIndex] = { ...entry, assist: b.dataset.pid };
       saveMatch(); renderMatch(); closeSheet();
     }
   });
@@ -826,7 +826,7 @@ function wireEvents() {
       addMyGoal(pendingPid, null); closeSheet();
     } else { // edit-assist: アシストを削除/なしに
       const entry = normalizeScorerEntry(state.match.scorers[pendingEditIndex]);
-      state.match.scorers[pendingEditIndex] = { pid: entry.pid, assist: null };
+      state.match.scorers[pendingEditIndex] = { ...entry, assist: null };
       saveMatch(); renderMatch(); closeSheet();
     }
   });
