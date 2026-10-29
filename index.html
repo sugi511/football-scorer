@@ -63,6 +63,14 @@
   }
   .segment button.selected { border-color: var(--c-accent); background: #e8f0fd; color: var(--c-accent); }
 
+  /* ===== 前半/後半トグル ===== */
+  .half-toggle { display: flex; padding: 4px; gap: 4px; background: var(--c-bg); border-radius: 10px; }
+  .half-toggle button {
+    flex: 1; padding: 12px; border: none; border-radius: 7px;
+    background: transparent; color: var(--c-sub); font-size: 15px; font-weight: 700;
+  }
+  .half-toggle button.selected { background: var(--c-accent); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.16); }
+
   /* ===== 相手チーム名 ===== */
   .opponent-wrap { position: relative; }
   #opponent-input {
@@ -252,9 +260,12 @@
     </div>
 
     <div class="card">
-      <div class="label" id="half-heading">前半</div>
-      <div id="half-score" style="font-size:14px;color:var(--c-sub);text-align:center;margin-bottom:10px"></div>
-      <button class="btn-secondary" id="half-switch">後半へ</button>
+      <div class="label">入力するハーフ</div>
+      <div class="half-toggle" id="half-toggle" role="group" aria-label="入力するハーフ">
+        <button type="button" data-half="1" aria-pressed="true">前半</button>
+        <button type="button" data-half="2" aria-pressed="false">後半</button>
+      </div>
+      <div id="half-score" style="font-size:14px;color:var(--c-sub);text-align:center;margin-top:10px"></div>
     </div>
 
     <button class="btn-primary" id="btn-finish">試合終了 → プレビュー</button>
@@ -537,9 +548,12 @@ function renderMatch() {
   document.getElementById('op-label').textContent = state.match.opponent || '相手';
   document.getElementById('my-score').textContent = state.match.myScore;
   document.getElementById('op-score').textContent = state.match.opScore;
-  document.getElementById('half-heading').textContent = state.match.half === 1 ? '前半' : '後半';
   document.getElementById('half-score').textContent = `前半 ${state.match.firstHalfMyScore}-${state.match.firstHalfOpScore}　後半 ${state.match.secondHalfMyScore}-${state.match.secondHalfOpScore}`;
-  document.getElementById('half-switch').textContent = state.match.half === 1 ? '後半へ' : '前半へ';
+  document.querySelectorAll('#half-toggle button').forEach(button => {
+    const selected = Number(button.dataset.half) === state.match.half;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
   document.getElementById('my-minus').disabled = state.match.myScore === 0;
   document.getElementById('op-minus').disabled = state.match.opScore === 0;
 
@@ -698,8 +712,8 @@ function undoOpGoal() {
   else state.match.firstHalfOpScore = Math.max(0, state.match.firstHalfOpScore - 1);
   saveMatch(); renderMatch();
 }
-function switchHalf() {
-  state.match.half = state.match.half === 1 ? 2 : 1;
+function switchHalf(half) {
+  state.match.half = half;
   saveMatch(); renderMatch();
 }
 
@@ -799,7 +813,8 @@ function wireEvents() {
   });
 
   document.getElementById('my-plus').addEventListener('click', openScorerSheet);
-  document.getElementById('half-switch').addEventListener('click', switchHalf);
+  document.querySelectorAll('#half-toggle button').forEach(button =>
+    button.addEventListener('click', () => switchHalf(Number(button.dataset.half))));
   document.getElementById('my-minus').addEventListener('click', undoMyGoal);
   document.getElementById('op-plus').addEventListener('click', addOpGoal);
   document.getElementById('op-minus').addEventListener('click', undoOpGoal);
