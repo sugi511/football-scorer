@@ -26,6 +26,7 @@
   }
   button { font-family: inherit; touch-action: manipulation; cursor: pointer; }
   input, textarea { font-family: inherit; font-size: 16px; }
+  [hidden] { display: none !important; }
 
   .app { max-width: 480px; margin: 0 auto; padding: 0 12px 96px; }
 
@@ -739,8 +740,10 @@ function undoOpGoal() {
   ensureHalfScores(state.match);
   if (state.match.opScore === 0) return;
   state.match.opScore--;
-  if (state.match.secondHalfOpScore > 0) state.match.secondHalfOpScore--;
-  else state.match.firstHalfOpScore = Math.max(0, state.match.firstHalfOpScore - 1);
+  const selectedKey = state.match.half === 1 ? 'firstHalfOpScore' : 'secondHalfOpScore';
+  const otherKey = state.match.half === 1 ? 'secondHalfOpScore' : 'firstHalfOpScore';
+  if (state.match[selectedKey] > 0) state.match[selectedKey]--;
+  else state.match[otherKey] = Math.max(0, state.match[otherKey] - 1);
   saveMatch(); renderMatch();
 }
 function switchHalf(half) {
@@ -770,7 +773,8 @@ function closeHalftimeReport() {
 
 function shareHalftimeReportToLine() {
   const report = document.getElementById('report-text').textContent;
-  window.location.href = `https://line.me/R/msg/text/?${encodeURIComponent(report)}`;
+  const url = `https://line.me/R/msg/text/?${encodeURIComponent(report)}`;
+  window.open(url, '_blank', 'noopener');
 }
 
 /* ================= プレビュー ================= */
@@ -826,6 +830,12 @@ function renderToday() {
 /* ================= 選手設定 ================= */
 function serializePlayers() { return state.players.map(p => `${p.number},${p.name}`).join('\n'); }
 function parseBulk(text) {
+  const previousIds = new Map();
+  for (const player of state.players) {
+    const key = `${player.number}\u0000${player.name}`;
+    if (!previousIds.has(key)) previousIds.set(key, []);
+    previousIds.get(key).push(player.id);
+  }
   return text.split('\n').reduce((acc, rawLine) => {
     const line = rawLine.trim(); if (!line) return acc;
     const idx = line.search(/[,，]/);
@@ -833,7 +843,8 @@ function parseBulk(text) {
     if (idx === -1) { number = line; name = ''; }
     else { number = line.slice(0, idx).trim(); name = line.slice(idx + 1).trim(); }
     if (!number && !name) return acc;
-    acc.push({ id: uid(), number, name }); return acc;
+    const matchingIds = previousIds.get(`${number}\u0000${name}`);
+    acc.push({ id: matchingIds?.shift() || uid(), number, name }); return acc;
   }, []);
 }
 function renderPlayersScreen(refreshTextarea) {
