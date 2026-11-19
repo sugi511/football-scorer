@@ -242,11 +242,7 @@
     <h1 id="match-heading">試合</h1>
     <div class="card">
       <div class="label">自チーム（混合のときは「なし」）</div>
-      <div class="segment" id="team-segment">
-        <button data-team="シリウス">シリウス</button>
-        <button data-team="レグルス">レグルス</button>
-        <button data-team="">なし</button>
-      </div>
+      <div class="segment" id="team-segment"></div>
     </div>
 
     <div class="card">
@@ -569,9 +565,7 @@ function renderMatch() {
   // 見出しに何戦目か表示
   document.getElementById('match-heading').textContent = `試合（第${currentMatchNumber()}戦）`;
 
-  document.querySelectorAll('#team-segment button').forEach(b => {
-    b.classList.toggle('selected', b.dataset.team === state.match.myTeam);
-  });
+  renderTeamOptions();
   const inp = document.getElementById('opponent-input');
   if (document.activeElement !== inp && inp.value !== state.match.opponent) {
     inp.value = state.match.opponent;
@@ -710,6 +704,15 @@ function closeSheet() {
 
 /* ================= 試合の mutation ================= */
 function setMyTeam(v) { state.match.myTeam = v; saveMatch(); renderMatch(); }
+
+function renderTeamOptions() {
+  const options = ['シリウス', 'レグルス', ''];
+  document.getElementById('team-segment').innerHTML = options.map(team => {
+    const label = team || 'なし';
+    const selected = team === state.match.myTeam ? ' selected' : '';
+    return `<button type="button" class="team-option${selected}" data-team="${esc(team)}">${esc(label)}</button>`;
+  }).join('');
+}
 
 function addMyGoal(pid, assist) {
   ensureHalfScores(state.match);
@@ -871,32 +874,51 @@ async function copyPlayerShareLink() {
     showToast('共有する選手がいません');
     return;
   }
+  if (!window.CompressionStream) {
+    showToast('このブラウザでは短縮リンクを作成できません');
+    return;
+  }
   const url = new URL(window.location.href);
   url.search = '';
-  url.searchParams.set('players', JSON.stringify(state.players.map(({ number, name }) => ({
+  const players = state.players.map(({ number, name }) => ({
     number: number || '',
     name: name || '',
-  }))));
+  }));
+  const bytes = new TextEncoder().encode(JSON.stringify(players));
+  const compressedStream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  const compressed = new Uint8Array(await new Response(compressedStream).arrayBuffer());
+  const binary = Array.from(compressed, byte => String.fromCharCode(byte)).join('');
+  const payload = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  url.hash = `p=${payload}`;
   if (url.href.length > 8000) {
-    showToast('選手数が多く、共有リンクが長すぎます');
+    showToast('選手数が多く、短縮してもリンクが長すぎます');
     return;
   }
   const ok = await copyText(url.href);
   showToast(ok ? '選手リストの共有リンクをコピーしました' : 'リンクのコピーに失敗しました');
 }
 
-function importPlayersFromUrl() {
+async function importPlayersFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const raw = params.get('players');
-  if (raw === null) return 0;
+  const hashMatch = window.location.hash.match(/^#p=([A-Za-z0-9_-]+)$/);
+  if (raw === null && !hashMatch) return 0;
   let players;
   try {
-    players = JSON.parse(raw);
+    if (hashMatch) {
+      if (!window.DecompressionStream) throw new Error('compressed links are unsupported');
+      const binary = atob(hashMatch[1].replace(/-/g, '+').replace(/_/g, '/'));
+      const compressed = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+      players = JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer()));
+    } else {
+      players = JSON.parse(raw);
+    }
   } catch (e) {
-    history.replaceState(null, '', window.location.pathname + window.location.hash);
+    history.replaceState(null, '', window.location.pathname);
     return -1;
   }
-  history.replaceState(null, '', window.location.pathname + window.location.hash);
+  history.replaceState(null, '', window.location.pathname);
   if (!Array.isArray(players) || players.length > 200) return -1;
   return mergeSharedPlayers(players);
 }
@@ -920,8 +942,10 @@ function wireEvents() {
     b.addEventListener('click', () => showScreen(b.dataset.screen)));
 
   // 試合画面
-  document.querySelectorAll('#team-segment button').forEach(b =>
-    b.addEventListener('click', () => setMyTeam(b.dataset.team)));
+  document.getElementById('team-segment').addEventListener('click', e => {
+    const choice = e.target.closest('button[data-team]');
+    if (choice) setMyTeam(choice.dataset.team);
+  });
 
   const inp = document.getElementById('opponent-input');
   inp.addEventListener('input', () => { state.match.opponent = inp.value; saveMatch(); renderSuggest(); });
@@ -1071,12 +1095,13 @@ function wireEvents() {
 }
 
 /* ================= 初期化 ================= */
-function init() {
+async function init() {
   if (!storageOK) document.getElementById('storage-warning').style.display = 'block';
   store.save(KEY.version, 1);
 
   state.players   = store.load(KEY.players, []);
-  const sharedPlayersAdded = importPlayersFromUrl();
+  store.save('fs.teams', ['シリウス', 'レグルス']);
+  const sharedPlayersAdded = await importPlayersFromUrl();
   state.opponents = store.load(KEY.opponents, []).filter(o => o && o.name && withinDays(o.lastUsed, 30));
   saveOpponents();
 
@@ -1086,6 +1111,9 @@ function init() {
 
   const cm = store.load(KEY.current, null);
   state.match = (cm && typeof cm.myScore === 'number') ? cm : newMatch();
+  if (state.match.myTeam && !['シリウス', 'レグルス'].includes(state.match.myTeam)) {
+    state.match.myTeam = '';
+  }
   state.match.firstHalfMyScore ??= state.match.myScore;
   state.match.firstHalfOpScore ??= state.match.opScore;
   state.match.secondHalfMyScore ??= 0;
