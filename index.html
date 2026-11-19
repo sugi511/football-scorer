@@ -320,7 +320,9 @@
       <div class="hint">番号だけの子は「9,」、名前だけの子は「,鈴木」と書けます。<br>この行の順番がそのまま表示順になります。</div>
       <div style="margin-top:10px">
         <button class="btn-primary" id="btn-bulk">一括登録（全置換）</button>
+        <button class="btn-secondary" id="btn-share-players" style="margin-top:10px">選手リストの共有リンクをコピー</button>
       </div>
+      <div class="hint">共有リンクを開くと、この端末の選手リストに追加されます。同じ番号・名前は重複登録されません。リンクには選手の個人情報が含まれるため、共有先にご注意ください。</div>
     </div>
     <div class="card">
       <div class="label">個別編集</div>
@@ -847,6 +849,59 @@ function parseBulk(text) {
     acc.push({ id: matchingIds?.shift() || uid(), number, name }); return acc;
   }, []);
 }
+function mergeSharedPlayers(players) {
+  const existing = new Set(state.players.map(p => `${p.number || ''}\u0000${p.name || ''}`));
+  let added = 0;
+  for (const player of players) {
+    if (!player || typeof player !== 'object') continue;
+    const number = typeof player.number === 'string' ? player.number.trim().slice(0, 20) : '';
+    const name = typeof player.name === 'string' ? player.name.trim().slice(0, 80) : '';
+    if (!number && !name) continue;
+    const key = `${number}\u0000${name}`;
+    if (existing.has(key)) continue;
+    state.players.push({ id: uid(), number, name });
+    existing.add(key);
+    added++;
+  }
+  if (added) savePlayers();
+  return added;
+}
+
+async function copyPlayerShareLink() {
+  if (!state.players.length) {
+    showToast('共有する選手がいません');
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('players', JSON.stringify(state.players.map(({ number, name }) => ({
+    number: number || '',
+    name: name || '',
+  }))));
+  if (url.href.length > 8000) {
+    showToast('選手数が多く、共有リンクが長すぎます');
+    return;
+  }
+  const ok = await copyText(url.href);
+  showToast(ok ? '選手リストの共有リンクをコピーしました' : 'リンクのコピーに失敗しました');
+}
+
+function importPlayersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('players');
+  if (raw === null) return 0;
+  let players;
+  try {
+    players = JSON.parse(raw);
+  } catch (e) {
+    history.replaceState(null, '', window.location.pathname + window.location.hash);
+    return -1;
+  }
+  history.replaceState(null, '', window.location.pathname + window.location.hash);
+  if (!Array.isArray(players) || players.length > 200) return -1;
+  return mergeSharedPlayers(players);
+}
+
 function renderPlayersScreen(refreshTextarea) {
   if (refreshTextarea) document.getElementById('bulk-input').value = serializePlayers();
   const list = document.getElementById('player-list');
@@ -965,6 +1020,7 @@ function wireEvents() {
   });
 
   // 選手設定
+  document.getElementById('btn-share-players').addEventListener('click', copyPlayerShareLink);
   document.getElementById('btn-bulk').addEventListener('click', () => {
     const players = parseBulk(document.getElementById('bulk-input').value);
     if (state.players.length > 0 && !confirm('現在の選手リストを置き換えます。よろしいですか？')) return;
@@ -1021,6 +1077,7 @@ function init() {
   store.save(KEY.version, 1);
 
   state.players   = store.load(KEY.players, []);
+  const sharedPlayersAdded = importPlayersFromUrl();
   state.opponents = store.load(KEY.opponents, []).filter(o => o && o.name && withinDays(o.lastUsed, 30));
   saveOpponents();
 
@@ -1047,10 +1104,13 @@ function init() {
 
   wireEvents();
   showScreen('match');
+  if (sharedPlayersAdded > 0) showToast(`${sharedPlayersAdded}人を選手リストに追加しました`);
+  else if (sharedPlayersAdded < 0) showToast('共有リンクの選手データを読み取れませんでした');
 }
 
 init();
 </script>
 </body>
 </html>
+
 
